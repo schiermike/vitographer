@@ -3,9 +3,14 @@
 # Simple deploy script
 
 TARGET="root@raspi"
-DEST=$TARGET:/opt/vitographer/
+DIR=/opt/vitographer
+DEST=$TARGET:$DIR
 
-ssh $TARGET 'mkdir -p /opt/vitographer/logs'
-scp bin/vitographer $DEST
+ssh $TARGET "mkdir -p $DIR/logs"
+
 scp conf.yml $DEST
-scp cron/vitographer.cron $TARGET:/etc/cron.d/
+
+scp bin/vitographer $DEST
+ssh $TARGET "chmod 755 $DIR/vitographer"
+
+scp cron/vitographer.cron $TARGET:/etc/cron.d/vitographer

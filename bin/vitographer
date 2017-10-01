@@ -12,6 +12,10 @@ import yaml
 log = logging.getLogger()
 
 
+class BadReadingException(Exception):
+    """Gets throws if a value cannot be obtained from the Vitodens device"""
+
+
 class GraphiteWriter(object):
     def __init__(self, host, port, timeout, metric_prefix='vitodens.'):
         self._sock = socket.socket()
@@ -52,6 +56,9 @@ class DataReader(object):
                 except socket.timeout:
                     log.warn('Obtaining result for %s took too long - skipping', func_name)
                     continue
+                except BadReadingException:
+                    log.warn('Obtaining result for %s failed - skipping', func_name)
+                    continue
                 metric_name = func_name[4:]
                 yield metric_name, value
 
@@ -62,6 +69,8 @@ class DataReader(object):
         self._read_prompt()
         self._sock.send('%s\n' % command)
         data = self._sock.recv(1000)
+        if data is None:
+            raise BadReadingException()
         return parse_func(data) if parse_func else data
 
     def _read_temp(self, command):
