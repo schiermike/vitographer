@@ -1,60 +1,44 @@
 #!/usr/bin/env python
-import time
-import re
+import argparse
 import logging
-import socket
 import os
+import re
+import socket
+import sys
+import time
+
 import yaml
 
-import argparse
-
-log = logging.getLogger(__name__)
-
-
-def _config_from_file(cfg_file):
-    if not os.path.isfile(cfg_file):
-        raise ValueError('Config file %r does not exist!' % cfg_file)
-    with open(cfg_file, 'r') as f:
-        return yaml.load(f.read())
+log = logging.getLogger()
 
 
 class GraphiteWriter(object):
-    def __init__(self, host, port):
-        self._host = host
-        self._port = port
+    def __init__(self, host, port, timeout, metric_prefix='vitodens.'):
+        self._sock = socket.socket()
+        self._sock.settimeout(timeout)
+        self._sock.connect((host, port))
+        self._metric_prefix = metric_prefix
+        self._buffer = []
 
-    def submit(self, metric_name, value):
-        sock = socket.socket()
-        sock.connect((self._host, self._port))
-        sock.sendall('%s %s %d\n' % (metric_name, value, int(time.time())))
-        sock.close()
+    def write(self, metric_name, value):
+        log.info('WRITING metric  %30s: %s', metric_name, value)
+        metric_name = self._metric_prefix + metric_name
+        self._buffer.append('%s %s %d\n' % (metric_name, value, int(time.time())))
+
+    def close(self):
+        data = ''.join(self._buffer)
+        self._sock.sendall(data)
+        self._sock.close()
 
 
-def main():
-    arg_parser = argparse.ArgumentParser(description='Vitodens heating data extractor')
-    arg_parser.add_argument('config', metavar='CONFIG', help='The configuration file to use.')
-    args = arg_parser.parse_args()
-    cfg_file = args.config
-    cfg = _config_from_file(cfg_file)
-
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s]: %(message)s')
-    log.info('Capturing vitodens data ...')
-    reader = DataReader(host=cfg['vitodens']['host'], port=cfg['vitodens']['port'])
-    writer = GraphiteWriter(host=cfg['carbon']['host'], port=cfg['carbon']['port'])
-
-    for metric, value in reader.read_all():
-        log.info('vitodens.%s: %s', metric, value)
-        try:
-            writer.submit('vitodens.%s' % metric, value)
-        except Exception:
-            log.exception('Something went while trying to submit the vitodens metrics to graphite')
-    log.info('All done - exiting')
+########################################################################################################################
 
 
 class DataReader(object):
 
-    def __init__(self, host, port):
+    def __init__(self, host, port, timeout):
         self._sock = socket.socket()
+        self._sock.settimeout(timeout)
         self._sock.connect((host, port))
 
     def close(self):
@@ -63,7 +47,11 @@ class DataReader(object):
     def read_all(self):
         for func_name in dir(self):
             if func_name.startswith('get_'):
-                value = getattr(self, func_name)()
+                try:
+                    value = getattr(self, func_name)()
+                except socket.timeout:
+                    log.warn('Obtaining result for %s took too long - skipping', func_name)
+                    continue
                 metric_name = func_name[4:]
                 yield metric_name, value
 
@@ -255,5 +243,62 @@ class DataReader(object):
         return self._read('getUmschaltventil')
 
 
+########################################################################################################################
+
+
+def _setup_logging(log_dir, verbose):
+    if log_dir is None:
+        handler = logging.StreamHandler(sys.stdout)
+    else:
+        log_file_name = os.path.join(log_dir, 'vitographer.log')
+        handler = logging.FileHandler(log_file_name)
+
+    handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s: %(message)s'))
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG if verbose else logging.INFO)
+    root_logger.addHandler(handler)
+
+
+########################################################################################################################
+
+
+def _config_from_file(cfg_file):
+    if not os.path.isfile(cfg_file):
+        raise ValueError('Config file %r does not exist!' % cfg_file)
+    with open(cfg_file, 'r') as f:
+        return yaml.load(f.read())
+
+
+########################################################################################################################
+
+
+def main():
+    arg_parser = argparse.ArgumentParser(description='Vitodens heating data extractor')
+    arg_parser.add_argument('config', metavar='CONFIG', help='The configuration file to use.')
+    arg_parser.add_argument('-ld', '--log-dir', metavar='LOGDIR', default=None,
+                            help='The directory where log files should be created in. Log to stdout if not set.')
+    arg_parser.add_argument('-v', '--verbose',  action='store_true', default=False,
+                            help='When set, increase verbosity of logging.')
+
+    args = arg_parser.parse_args()
+    _setup_logging(args.log_dir, args.verbose)
+    cfg = _config_from_file(args.config)
+
+    log.info('START vitodens metrics capture.')
+    reader = DataReader(**cfg['vitodens'])
+    writer = GraphiteWriter(**cfg['carbon'])
+    for metric, value in reader.read_all():
+        writer.write(metric, value)
+    writer.close()
+    log.info('FINISHED vitodens metrics capture.')
+
+
+########################################################################################################################
+
+
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception:
+        log.exception('Vitographer crashed.')
+        raise

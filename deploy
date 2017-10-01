@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# Simple deploy script
+
+TARGET="root@raspi"
+DEST=$TARGET:/opt/vitographer/
+
+ssh $TARGET 'mkdir -p /opt/vitographer/logs'
+scp bin/vitographer $DEST
+scp conf.yml $DEST
+scp cron/vitographer.cron $TARGET:/etc/cron.d/

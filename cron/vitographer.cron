@@ -1,0 +1,1 @@
+* * * * * root /opt/vitographer/vitographer --log-dir /opt/vitographer/logs /opt/vitographer/conf.yml
