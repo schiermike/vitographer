@@ -8,7 +8,7 @@ DEST=$TARGET:$DIR
 
 ssh $TARGET "mkdir -p $DIR/logs"
 
-scp conf.yml $DEST
+scp conf/vitographer.yml $DEST/conf.yml
 
 scp bin/vitographer $DEST
 ssh $TARGET "chmod 755 $DIR/vitographer"

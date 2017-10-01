@@ -1,0 +1,27 @@
+search_index: /var/lib/graphite/index
+finders:
+  - graphite_api.finders.whisper.WhisperFinder
+functions:
+  - graphite_api.functions.SeriesFunctions
+  - graphite_api.functions.PieFunctions
+whisper:
+  directories:
+    - /var/lib/graphite/whisper
+carbon:
+  hosts:
+    - 127.0.0.1:7002
+  timeout: 1
+  retry_delay: 15
+  carbon_prefix: carbon
+  replication_factor: 1
+
+allowed_origins:
+  - raspi
+  - raspi:3000
+
+uwsgi:
+  processes: 2
+  socket: localhost:8080
+  plugins: python27
+  module: graphite_api.app:app
+  logto: /var/log/graphite-api.log
