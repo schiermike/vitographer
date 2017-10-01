@@ -1,0 +1,10 @@
+/var/log/vcontrold.log {
+	daily
+	missingok
+	rotate 7
+	compress
+	delaycompress
+	notifempty
+	sharedscripts
+	nocreate
+}
