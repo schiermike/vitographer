@@ -1,0 +1,2 @@
+pyyaml=3.12
+ipython<=6.0

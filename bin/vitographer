@@ -1,0 +1,259 @@
+#!/usr/bin/env python
+import time
+import re
+import logging
+import socket
+import os
+import yaml
+
+import argparse
+
+log = logging.getLogger(__name__)
+
+
+def _config_from_file(cfg_file):
+    if not os.path.isfile(cfg_file):
+        raise ValueError('Config file %r does not exist!' % cfg_file)
+    with open(cfg_file, 'r') as f:
+        return yaml.load(f.read())
+
+
+class GraphiteWriter(object):
+    def __init__(self, host, port):
+        self._host = host
+        self._port = port
+
+    def submit(self, metric_name, value):
+        sock = socket.socket()
+        sock.connect((self._host, self._port))
+        sock.sendall('%s %s %d\n' % (metric_name, value, int(time.time())))
+        sock.close()
+
+
+def main():
+    arg_parser = argparse.ArgumentParser(description='Vitodens heating data extractor')
+    arg_parser.add_argument('config', metavar='CONFIG', help='The configuration file to use.')
+    args = arg_parser.parse_args()
+    cfg_file = args.config
+    cfg = _config_from_file(cfg_file)
+
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s]: %(message)s')
+    log.info('Capturing vitodens data ...')
+    reader = DataReader(host=cfg['vitodens']['host'], port=cfg['vitodens']['port'])
+    writer = GraphiteWriter(host=cfg['carbon']['host'], port=cfg['carbon']['port'])
+
+    for metric, value in reader.read_all():
+        log.info('vitodens.%s: %s', metric, value)
+        try:
+            writer.submit('vitodens.%s' % metric, value)
+        except Exception:
+            log.exception('Something went while trying to submit the vitodens metrics to graphite')
+    log.info('All done - exiting')
+
+
+class DataReader(object):
+
+    def __init__(self, host, port):
+        self._sock = socket.socket()
+        self._sock.connect((host, port))
+
+    def close(self):
+        self._sock.close()
+
+    def read_all(self):
+        for func_name in dir(self):
+            if func_name.startswith('get_'):
+                value = getattr(self, func_name)()
+                metric_name = func_name[4:]
+                yield metric_name, value
+
+    def _read_prompt(self):
+        assert self._sock.recv(1000) == 'vctrld>'
+
+    def _read(self, command, parse_func=None):
+        self._read_prompt()
+        self._sock.send('%s\n' % command)
+        data = self._sock.recv(1000)
+        return parse_func(data) if parse_func else data
+
+    def _read_temp(self, command):
+        return self._read(command, lambda v: float(re.match(r'(\d+\.\d+) Grad Celsius', v).group(1)))
+
+    def _read_percentage(self, command):
+        return self._read(command, lambda v: float(re.match(r'(\d+\.\d+) %', v).group(1)))
+
+    def _read_hours(self, command):
+        return self._read(command, lambda v: float(re.match(r'(\d+\.\d+) Stunden', v).group(1)))
+
+    def get_outside_temperature(self):
+        return self._read_temp('getTempA')
+
+    def get_outside_temperature_low_pass(self):
+        return self._read_temp('getTempAtp')
+
+    def get_warm_water_temperature(self):
+        return self._read_temp('getTempWWist')
+
+    def get_warm_water_output_temperature(self):
+        return self._read_temp('getTempStp2')
+
+    def get_target_warm_water_temperature(self):
+        return self._read_temp('getTempWWsoll')
+
+    def get_exhaust_gas_temperature(self):
+        return self._read_temp('getTempAbgas')
+
+    def get_boiler_target_value(self):
+        return self._read_temp('getTempKsoll')
+
+    def get_inclination_m1(self):
+        return self._read('getNeigungM1', parse_func=float)
+
+    def get_inclination_m2(self):
+        return self._read('getNeigungM2', parse_func=float)
+
+    def get_niveau_m1(self):
+        return self._read('getNiveauM1', parse_func=float)
+
+    def get_niveau_m2(self):
+        return self._read('getNiveauM2', parse_func=float)
+
+    def get_supply_temperature_m1(self):
+        return self._read_temp('getTempVListM1')
+
+    def get_supply_temperature_m2(self):
+        return self._read_temp('getTempVListM2')
+
+    def get_return_temperature(self):
+        return self._read_temp('getTempRL17A')
+
+    def get_error_status(self):
+        return self._read('getStatusStoerung', parse_func=float)
+
+    def get_warm_water_pump_tail(self):
+        return self._read('getWWUWPNachlauf', parse_func=float)
+
+    def get_reservoir_precedence(self):
+        return self._read('getSpeichervorrang', parse_func=float)
+
+    def get_reservoir_precedence_mixer2(self):
+        return self._read('getSpeichervorrangM2', parse_func=float)
+
+    def get_reservoir_precedence_mixer3(self):
+        return self._read('getSpeichervorrangM3', parse_func=float)
+
+    def get_reservoir_temperature(self):
+        return self._read_temp('getTempStp')
+
+    def get_boiler_temperature_offset(self):
+        return self._read_temp('getTempKOffset')
+
+    def get_boiler_temperature(self):
+        return self._read_temp('getTempKist')
+
+    def get_boiler_temperature_low_pass(self):
+        return self._read_temp('getTempKtp')
+
+    def get_circulation_flow(self):
+        """in litres per hour"""
+        return self._read('getVolStrom', lambda v: float(re.match(r'(\d+\.\d+) l/h', v).group(1)))
+
+    def get_burner_status(self):
+        return self._read('getBrennerStatus', parse_func=float)
+
+    def get_burner_starts(self):
+        return self._read('getBrennerStarts', parse_func=float)
+
+    def get_burner_hours1(self):
+        return self._read_hours('getBrennerStunden1')
+
+    def get_burner_hours2(self):
+        return self._read_hours('getBrennerStunden2')
+
+    def get_performance(self):
+        return self._read_percentage('getLeistungIst')
+
+    def get_oil_flow(self):
+        return self._read('getOeldurchsatz', parse_func=float)
+
+    def get_oil_consumption(self):
+        return self._read('getOelverbrauch', parse_func=float)
+
+    def get_target_room_temperature_m1(self):
+        return self._read_temp('getTempRaumNorSollM1')
+
+    def get_target_room_temperature_m2(self):
+        return self._read_temp('getTempRaumNorSollM2')
+
+    def get_reduced_target_room_temperature_m1(self):
+        return self._read_temp('getTempRaumRedSollM1')
+
+    def get_reduced_target_room_temperature_m2(self):
+        return self._read_temp('getTempRaumRedSollM2')
+
+    def get_temperature_stssol(self):
+        return self._read_temp('getTempSTSSOL')
+
+    def get_mode_of_operation(self):
+        return self._read('getBetriebArt', parse_func=lambda v: v.strip())
+
+    def get_mode_of_operation_m1(self):
+        return self._read('getBetriebArtM1', parse_func=lambda v: v.strip())
+
+    def get_mode_of_operation_m2(self):
+        return self._read('getBetriebArtM2', parse_func=lambda v: v.strip())
+
+    def get_mode_of_operation_save_m1(self):
+        return self._read('getBetriebSparM1', parse_func=int)
+
+    def get_mode_of_operation_save_m2(self):
+        return self._read('getBetriebSparM2', parse_func=int)
+
+    def get_mode_of_operation_party_m1(self):
+        return self._read('getBetriebPartyM1', parse_func=int)
+
+    def get_mode_of_operation_party_m2(self):
+        return self._read('getBetriebPartyM2', parse_func=int)
+
+    def get_party_temperature_m1(self):
+        return self._read('getTempPartyM1', parse_func=float)
+
+    def get_party_temperature_m2(self):
+        return self._read('getTempPartyM2', parse_func=float)
+
+    def get_status_frost_m1(self):
+        return self._read('getStatusFrostM1', parse_func=float)
+
+    def get_status_frost_m2(self):
+        return self._read('getStatusFrostM2', parse_func=float)
+
+    def get_circulation_pump_temp_m1(self):
+        return self._read_temp('getKA5')
+
+    def get_circulation_pump_temp_m2(self):
+        return self._read_temp('getKA5M2')
+
+    def get_circulation_pump_temp_m3(self):
+        return self._read_temp('getKA5M3')
+
+    def get_summer_saving_temp_m1(self):
+        return self._read_temp('getKA6')
+
+    def get_summer_saving_temp_m2(self):
+        return self._read_temp('getKA6M2')
+
+    def get_summer_saving_temp_m3(self):
+        return self._read_temp('getKA6M3')
+
+    def get_frost_threshold_m1(self):
+        return self._read_temp('getKA3_KonfiFrostgrenzeM1_GWG')
+
+    def get_frost_threshold_m2(self):
+        return self._read_temp('getKA3_KonfiFrostgrenzeM2_GWG')
+
+    def get_mode(self):
+        return self._read('getUmschaltventil')
+
+
+if __name__ == '__main__':
+    main()
