@@ -16,4 +16,4 @@ ssh $TARGET "chmod 755 $DIR/vitographer"
 scp cron/vitographer.cron $TARGET:/etc/cron.d/vitographer
 
 scp logrotate/vcontrold.txt $TARGET:/etc/logrotate.d/vcontrold
-scp logrotate/vitographer   .txt $TARGET:/etc/logrotate.d/vitographer
+scp logrotate/vitographer.txt $TARGET:/etc/logrotate.d/vitographer
