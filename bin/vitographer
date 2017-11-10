@@ -155,9 +155,6 @@ class DataReader(object):
         """in litres per hour"""
         return self._read('getVolStrom', lambda v: float(re.match(r'(\d+\.\d+) l/h', v).group(1)))
 
-    def get_burner_status(self):
-        return self._read('getBrennerStatus', parse_func=float)
-
     def get_burner_starts(self):
         return self._read('getBrennerStarts', parse_func=float)
 
@@ -169,6 +166,9 @@ class DataReader(object):
 
     def get_performance(self):
         return self._read_percentage('getLeistungIst')
+
+    def get_performance2(self):
+        return self._read_percentage('getLeistungIst2')
 
     def get_oil_flow(self):
         return self._read('getOeldurchsatz', parse_func=float)
