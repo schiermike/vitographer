@@ -15,8 +15,8 @@ scale(scale(summarize(scale(scale(scale(vitodens.performance, 0.01),1.82), 11000
 * `0.01` - `vitodens.performance` ranges from 0 to 100% -> map to interval `[0,1]`
 * `1.82` - factor I came up with to address the deviation between measured value and real value
 * `11000` - 11kW (my gas heater's max power)
-* summarized average value per day (in Watts)
-* `0.00006335` - € per Watt, i.e. 6.335 cent per kW
+* summarized average value per day (in Watt hours)
+* `0.00006335` - € per Watt, i.e. 6.335 cent per kWh
 
 ### Links
 - http://openv.wikispaces.com/
