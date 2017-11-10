@@ -1,7 +1,7 @@
 /opt/vitographer/logs/*.log {
 	daily
 	missingok
-	rotate 7
+	rotate 60
 	compress
 	delaycompress
 	notifempty
