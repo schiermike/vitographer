@@ -74,7 +74,7 @@ class DataReader(object):
         return parse_func(data) if parse_func else data
 
     def _read_temp(self, command):
-        return self._read(command, lambda v: float(re.match(r'(\d+\.\d+) Grad Celsius', v).group(1)))
+        return self._read(command, lambda v: float(re.match(r'(-?\d+(\.\d+)?) Grad Celsius', v).group(1)))
 
     def _read_percentage(self, command):
         return self._read(command, lambda v: float(re.match(r'(\d+\.\d+) %', v).group(1)))
