@@ -63,7 +63,9 @@ class DataReader(object):
                 yield metric_name, value
 
     def _read_prompt(self):
-        assert self._sock.recv(1000) == 'vctrld>'
+        data = self._sock.recv(1000)
+        if data != 'vctrld>':
+            raise BadReadingException('Read unexpected data: %r' % data)
 
     def _read(self, command, parse_func=None):
         self._read_prompt()
@@ -71,7 +73,13 @@ class DataReader(object):
         data = self._sock.recv(1000)
         if data is None or 'NOT OK' in data:
             raise BadReadingException('Got bad response for command %s: %s' % (command, data))
-        return parse_func(data) if parse_func else data
+        if not parse_func:
+            return data
+        try:
+            return parse_func(data)
+        except:
+            log.error('Failed to parse data %r', data)
+            raise
 
     def _read_temp(self, command):
         return self._read(command, lambda v: float(re.match(r'(-?\d+(\.\d+)?) Grad Celsius', v).group(1)))
